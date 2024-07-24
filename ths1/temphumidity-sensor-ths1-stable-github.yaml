@@ -1,0 +1,157 @@
+esphome:
+  name: temphumidity-sensor-ths1
+  comment: Temperature And Humidity Sensor THS1
+  friendly_name: Temperature And Humidity Sensor THS1
+  name_add_mac_suffix: True
+  platformio_options:
+    board_build.flash_mode: dio
+    board_build.f_cpu: 80000000L
+  on_boot:
+    - priority: 900
+      then:
+        lambda: |-
+          id(cpu_speed) = ESP.getCpuFreqMHz();
+  project: 
+    name: Screek.Temperature_And_Humidity_Sensor
+    version: THS1
+
+globals:
+   - id: cpu_speed
+     type: int
+     restore_value: no
+     initial_value: '0'
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/screekworkshop/custom_components_support_for_screek_2a
+      ref: main
+    components: [esp32, uart]
+  
+esp32:
+  board: lolin_c3_mini
+  framework:
+    type: arduino
+    version: 2.0.9
+    platform_version: 6.3.2
+
+improv_serial:
+  
+logger:
+  hardware_uart: uart0
+
+debug:
+  update_interval: 30s
+
+text_sensor:
+  - platform: debug
+    # device:
+    #   name: "Device Info"
+    reset_reason:
+      name: "Reset Reason"
+      disabled_by_default: True
+  - platform: wifi_info
+    mac_address:
+      name: ESP MAC
+      entity_category: "diagnostic"
+      disabled_by_default: True
+    
+# Enable Home Assistant API
+api:
+  # encryption:
+    # key: "your-api-key"
+
+ota:
+  - platform: esphome
+    password: "your-ota-password"
+
+wifi:
+  power_save_mode: LIGHT
+  reboot_timeout: 10min
+  ap:
+    ssid: "SCREEK-THS1"
+
+captive_portal:
+
+web_server:
+  port: 80
+
+binary_sensor:
+  - platform: status
+    name: Online
+    id: ink_ha_connected
+
+sensor:
+  - platform: template
+    name: "ESP CPU Speed"
+    accuracy_decimals: 0
+    unit_of_measurement: Mhz
+    lambda: |-
+      return (id(cpu_speed));
+    entity_category: "diagnostic"
+    update_interval: 600s
+  - platform: template
+    id: sys_esp_temperature
+    name: ESP Temperature
+    lambda: return temperatureRead();
+    unit_of_measurement: °C
+    device_class: TEMPERATURE
+    update_interval: 45s
+    entity_category: "diagnostic"
+  - platform: uptime
+    name: Uptime
+    id: sys_uptime
+    update_interval: 60s
+  - platform: wifi_signal 
+    name: RSSI
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: template
+    id: esp_memory
+    icon: mdi:memory
+    name: ESP Free Memory
+    lambda: return heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024;
+    unit_of_measurement: 'kB'
+    state_class: measurement
+    entity_category: "diagnostic"
+    update_interval: 60s
+  - platform: sht4x
+    i2c_id: sht_bus
+    temperature:
+      name: "Temperature"
+    humidity:
+      name: "Relative Humidity"
+    update_interval: 1s
+    
+i2c:
+  sda: GPIO3
+  scl: GPIO4
+  scan: true
+  id: sht_bus
+
+light:
+  - platform: status_led
+    name: sys_status
+    id: sys_status
+    pin: 
+      number: GPIO8
+      inverted: True
+    internal: True
+    restore_mode: ALWAYS_OFF
+
+time:
+  - platform: sntp
+    id: time_now
+    # servers: 
+      # - ntp.aliyun.com      
+
+button:
+  - platform: restart
+    # disabled_by_default: True
+    icon: mdi:power-cycle
+    name: "ESP Reboot"
+  - platform: factory_reset
+    disabled_by_default: True
+    name: Factory Reset
+    id: factory_reset_all
