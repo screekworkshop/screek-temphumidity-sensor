@@ -1,0 +1,225 @@
+esphome:
+  name: screek-ths-sensor-ths45
+  comment: Temperature And Humidity Sensor THS45
+  friendly_name: Temperature And Humidity Sensor THS45
+  name_add_mac_suffix: True
+  platformio_options:
+    board_build.flash_mode: dio
+  project: 
+    name: SCREEK.Temperature_And_Humidity_Sensor THS45
+    version: 26.01.02-A
+
+globals:
+  - id: last_temp_update_time
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+  - id: last_temp
+    type: float
+    restore_value: no
+    initial_value: '-1'
+  - id: last_humidity_update_time
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+  - id: last_humidity
+    type: float
+    restore_value: no
+    initial_value: '-1'
+
+  
+esp32:
+  board: lolin_c3_mini
+  framework:
+    type: esp-idf
+
+improv_serial:
+
+logger:
+
+debug:
+  update_interval: 30s
+
+text_sensor:
+  - platform: debug
+    # device:
+    #   name: "Device Info"
+    reset_reason:
+      name: "Reset Reason"
+      disabled_by_default: True
+  - platform: wifi_info
+    mac_address:
+      name: ESP MAC
+      entity_category: "diagnostic"
+      disabled_by_default: True
+    
+# Enable Home Assistant API
+api:
+  
+
+ota:
+  - platform: esphome
+    password: "your-ota-password"
+
+safe_mode: 
+  disabled: true
+
+wifi:
+  reboot_timeout: 10min
+  ap:
+    ssid: "SCREEK-THS45"
+
+captive_portal:
+
+web_server:
+  port: 80
+
+binary_sensor:
+  - platform: status
+    name: Online
+    id: ink_ha_connected
+
+sensor:
+  - platform: internal_temperature
+    name: "ESP Temperature"
+    unit_of_measurement: °C
+    device_class: TEMPERATURE
+    update_interval: 30s
+    entity_category: "diagnostic"
+  - platform: uptime
+    name: Uptime
+    id: sys_uptime
+    update_interval: 60s
+  - platform: wifi_signal 
+    name: RSSI
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: template
+    id: esp_memory
+    icon: mdi:memory
+    name: ESP Free Memory
+    lambda: return heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024;
+    unit_of_measurement: 'kB'
+    state_class: measurement
+    entity_category: "diagnostic"
+    update_interval: 60s
+  - platform: sht4x
+    i2c_id: sht_bus
+    temperature:
+      name: "Temperature"
+      filters:
+        - lambda: !lambda |-
+            unsigned long time_diff = abs(static_cast<long long>(millis() - id(last_temp_update_time)));
+            unsigned long temp_update_interval = id(ths45_refresh_rate).state * 1000;
+
+            if (time_diff <= temp_update_interval) {
+              float diff_temp = abs(id(last_temp) - x);
+              if (diff_temp > id(temperature_delta_trigger).state) {
+                ESP_LOGD("Temperature Update Check - Difference", "Current Temperature: %.2f °C, Last Temperature: %.2f °C, Difference: %.2f °C exceeds the minimum change threshold of %.2f °C.", x, id(last_temp), diff_temp, id(temperature_delta_trigger).state);
+                id(last_temp_update_time) = millis();
+                id(last_temp) = x;
+                return x;
+              }
+              ESP_LOGD("Temperature Update Check - Timing", "Time since last update: %lu s, Required update interval: %lu s. Conditions not met, skipping update.", time_diff / 1000, temp_update_interval / 1000);
+              return {};
+            }
+
+            id(last_temp_update_time) = millis();
+            id(last_temp) = x;
+            return x;
+    humidity:
+      name: "Relative Humidity"
+      filters:
+        - lambda: !lambda |-
+            unsigned long time_diff = abs(static_cast<long long>(millis() - id(last_humidity_update_time)));
+            unsigned long humidity_update_interval = id(ths45_refresh_rate).state * 1000;
+
+            if (time_diff <= humidity_update_interval) {
+              float diff_humidity = abs(id(last_humidity) - x);
+              if (diff_humidity > id(humidity_delta_trigger).state) {
+                ESP_LOGD("Humidity Update Check - Difference", "Current Humidity: %.2f %%, Last Humidity: %.2f %%, Difference: %.2f %% exceeds the minimum change threshold of %.2f %%.", x, id(last_humidity), diff_humidity, id(humidity_delta_trigger).state);
+                id(last_humidity_update_time) = millis();
+                id(last_humidity) = x;
+                return x;
+              }
+              ESP_LOGD("Humidity Update Check - Timing", "Time since last update: %lu s, Required update interval: %lu s. Conditions not met, skipping update.", time_diff / 1000, humidity_update_interval / 1000);
+              return {};
+            }
+
+            id(last_humidity_update_time) = millis();
+            id(last_humidity) = x;
+            return x;
+    update_interval: 1s
+    
+i2c:
+  sda: GPIO3
+  scl: GPIO4
+  scan: true
+  id: sht_bus
+  
+
+number:
+  - platform: template
+    name: THS45 Refresh Interval
+    id: ths45_refresh_rate
+    icon: mdi:timer-sand
+    min_value: 1
+    max_value: 300
+    optimistic: True
+    step: 1
+    initial_value: 10
+    unit_of_measurement: 's'
+    mode: box
+    restore_value: True
+    entity_category: config
+  - platform: template
+    name: Temperature Delta Trigger
+    id: temperature_delta_trigger
+    icon: mdi:thermometer
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    initial_value: 0.5
+    unit_of_measurement: '°C'
+    mode: box
+    optimistic: True
+    restore_value: True
+    entity_category: config
+  - platform: template
+    name: Humidity Delta Trigger
+    id: humidity_delta_trigger
+    icon: mdi:water-percent
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 5
+    unit_of_measurement: '%'
+    mode: box
+    optimistic: True
+    restore_value: True
+    entity_category: config
+
+light:
+  - platform: status_led
+    name: sys_status
+    id: sys_status
+    pin: 
+      number: GPIO8
+      inverted: True
+    internal: True
+    restore_mode: ALWAYS_OFF
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time    
+
+button:
+  - platform: restart
+    # disabled_by_default: True
+    icon: mdi:power-cycle
+    name: "ESP Reboot"
+  - platform: factory_reset
+    disabled_by_default: True
+    name: Factory Reset
+    id: factory_reset_all
